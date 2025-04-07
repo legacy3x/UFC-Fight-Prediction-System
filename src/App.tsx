@@ -51,7 +51,6 @@ function AuthApp() {
       )}
 
       <div className="container mx-auto p-4">
-        {isAdmin && <AdminPanel />}
         <Routes>
           <Route 
             path="/" 
