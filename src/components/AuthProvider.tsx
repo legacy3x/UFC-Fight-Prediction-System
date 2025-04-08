@@ -1,63 +1,63 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../api/client';
-import { Session } from '@supabase/supabase-js';
-import { UserProfile, UserRole } from '../types/auth';
+import type { UserProfile } from '../types/auth';
 
 type AuthContextType = {
-  session: Session | null;
-  loading: boolean;
-  userProfile: UserProfile | null;
+  user: UserProfile | null;
   isAdmin: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType>({
-  session: null,
-  loading: true,
-  userProfile: null,
+  user: null,
   isAdmin: false,
+  signIn: async () => {},
+  signOut: async () => {},
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-
-  const fetchUserProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (!error && data) {
-      setUserProfile(data);
-    }
-  };
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session?.user?.id) {
-        await fetchUserProfile(session.user.id);
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          setUser(profile);
+          setIsAdmin(profile?.role === 'admin');
+        } else {
+          setUser(null);
+          setIsAdmin(false);
+        }
       }
-      setLoading(false);
-    });
+    );
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      if (session?.user?.id) {
-        await fetchUserProfile(session.user.id);
-      }
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
   }, []);
 
-  const isAdmin = userProfile?.role === 'admin';
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
 
   return (
-    <AuthContext.Provider value={{ session, loading, userProfile, isAdmin }}>
+    <AuthContext.Provider value={{ user, isAdmin, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
